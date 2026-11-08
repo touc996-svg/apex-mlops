@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+*.egg-info/
+.env
+.mypy_cache/
+.ruff_cache/
+mlruns/
+artifacts/*
+!artifacts/.gitkeep
+data/*
+!data/.gitkeep
+.DS_Store
+mlflow.db
+mlflow.db-shm
+mlflow.db-wal
