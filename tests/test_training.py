@@ -18,7 +18,7 @@ def test_training_compares_models_and_persists_selected_pipeline(tmp_path):
     metadata = json.loads((tmp_path / "model_metadata.json").read_text())
     assert metadata["selected_model"] == result["selected_model"]
     assert metadata["model_name"] == result["selected_model"]
-    assert metadata["model_version"] == "0.2.0"
+    assert metadata["model_version"] == "0.3.0"
     assert (tmp_path / "reference_features.csv").is_file()
     assert (tmp_path / "metrics.json").is_file()
 

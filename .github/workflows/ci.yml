@@ -37,5 +37,7 @@ jobs:
         run: python -m pytest -q
       - name: Check dependency consistency
         run: python -m pip check
+      - name: Validate production API security configuration
+        run: python -c "from apex.security import security_settings; import os; os.environ['APEX_ENV']='production'; os.environ['APEX_API_KEY']='ci-only-strong-key-0123456789-abcdef'; assert security_settings()[0] == 'production'"
       - name: Build inference container
         run: docker build -t apex-mlops:ci .
