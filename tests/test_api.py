@@ -16,7 +16,7 @@ def test_api_health_prediction_and_drift_endpoints(tmp_path):
     with TestClient(app) as client:
         health = client.get("/health")
         assert health.status_code == 200 and health.json()["model_loaded"] is True
-        assert health.json()["model_version"] == "0.2.0"
+        assert health.json()["model_version"] == "0.3.0"
         assert client.get("/health/live").json()["status"] == "alive"
         assert client.get("/health/ready").json()["status"] == "ready"
         info = client.get("/model/info")
@@ -49,3 +49,34 @@ def test_api_reports_not_ready_without_model(tmp_path):
         assert client.get("/health/live").status_code == 200
         assert client.get("/health/ready").status_code == 503
         assert client.post("/predict", json={"records": [sample_record()]}).status_code == 503
+
+
+
+def test_api_performance_monitoring_persists_metrics(tmp_path):
+    train_models(generate_dataset(rows=400, random_state=31), tmp_path, track_mlflow=False)
+    app = create_app(tmp_path)
+    payload = {
+        "records": [sample_record(), {**sample_record(), "tenure_months": 4, "support_tickets": 8}],
+        "actual_churn": [0, 1],
+    }
+    with TestClient(app) as client:
+        response = client.post("/monitor/performance", json=payload)
+        assert response.status_code == 200
+        report = response.json()
+        assert report["sample_size"] == 2
+        assert set(report["metrics"]) == {"accuracy", "precision", "recall", "f1", "roc_auc"}
+        assert client.get("/monitor/performance/latest").json() == report
+        assert (tmp_path / "performance_latest.json").is_file()
+
+
+def test_api_performance_monitoring_rejects_unbalanced_or_mismatched_labels(tmp_path):
+    train_models(generate_dataset(rows=400, random_state=32), tmp_path, track_mlflow=False)
+    with TestClient(create_app(tmp_path)) as client:
+        mismatched = client.post("/monitor/performance", json={
+            "records": [sample_record(), sample_record()], "actual_churn": [1, 0, 1]
+        })
+        assert mismatched.status_code == 422
+        one_class = client.post("/monitor/performance", json={
+            "records": [sample_record(), sample_record()], "actual_churn": [1, 1]
+        })
+        assert one_class.status_code == 422

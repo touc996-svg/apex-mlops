@@ -1,5 +1,7 @@
 # APEX — End-to-End MLOps Platform
 
+**Platform release: 0.3.0**
+
 APEX demonstrates a reproducible machine-learning lifecycle for binary customer-churn classification: data ingestion, feature preprocessing, model comparison, cross-validation, holdout evaluation, MLflow experiment tracking, model persistence, API inference, and feature-drift monitoring.
 
 > **Data notice:** The built-in dataset is synthetic and is intended for engineering demonstrations only. It is not real customer data and must not be used for business decisions.
@@ -10,7 +12,7 @@ CSV / Synthetic Data → Contract Validation → Feature Preprocessing → Logis
 
 ## Stack
 
-Python 3.12, pandas, NumPy, scikit-learn, MLflow, FastAPI, Pydantic, Uvicorn, PSI monitoring, Pytest, Docker, GitHub Actions.
+Python 3.12, pandas, NumPy, scikit-learn, MLflow Tracking + Model Registry, FastAPI, Pydantic, Uvicorn, PSI drift monitoring, outcome-based performance monitoring, API-key security, Pytest, Docker, GitHub Actions.
 
 ## Setup
 
@@ -70,6 +72,8 @@ API docs: http://127.0.0.1:8000/docs
 | `POST /predict` | Batch prediction, probability, risk band |
 | `POST /monitor/drift` | Compare current distributions with training reference |
 | `GET /monitor/drift/latest` | Most recently persisted drift report |
+| `POST /monitor/performance` | Evaluate predictions against newly available ground-truth labels |
+| `GET /monitor/performance/latest` | Latest persisted model-quality report |
 
 ## Tests and commands
 
@@ -101,7 +105,31 @@ GitHub Actions runs compilation, pytest, dependency consistency checks, and a Do
 ## Production limitations
 
 - The built-in dataset is synthetic unless a user-provided CSV is supplied.
-- Automatic retraining and model promotion are not implemented yet.
-- The API does not include authentication, authorization, rate limiting, or production secrets management.
+- Retraining is initiated explicitly from a newly labeled CSV; champion promotion is controlled by the MLflow registry quality gate.
+- API-key authentication is included; production deployments should still add authorization scopes, rate limiting, TLS termination, and managed secret storage.
 - Feature drift does not prove model performance degradation or concept drift.
 - Local MLflow uses SQLite; shared team deployments need secured tracking and managed database/artifact storage.
+
+
+## APEX 0.3.0 — model governance and production hardening
+
+- **API security:** `/predict`, `/model/info`, and monitoring endpoints accept `X-API-Key`. Local development remains frictionless when no key is configured. Production startup requires `APEX_API_KEY` with at least 32 characters. Liveness and readiness endpoints remain public for container orchestration.
+- **Model lineage:** every training run writes a timestamped immutable model snapshot, a SHA-256 checksum, and an artifact manifest alongside the stable `artifacts/model.joblib` serving path.
+- **MLflow Model Registry:** tracked runs register the selected pipeline as `APEXCustomerChurn`. The `champion` alias moves only when holdout ROC-AUC beats the existing champion by `APEX_PROMOTION_MIN_IMPROVEMENT`; otherwise the new version remains a candidate.
+- **Performance monitoring:** when ground-truth labels become available, `POST /monitor/performance` calculates accuracy, precision, recall, F1, and ROC-AUC and persists the latest report. Drift and model quality are separate signals.
+- **Controlled retraining:** provide a newly labeled CSV that follows the feature contract; APEX trains a candidate, tracks it, and applies the champion promotion gate:
+
+```bash
+python -m apex.retrain --csv data/new_labeled_churn.csv
+```
+
+Local configuration is documented in `.env.example`. Copy it to `.env`, generate a private key for deployments, and never commit `.env`. This release does not claim autonomous scheduled retraining: retraining is an explicit, auditable operation after labeled data is available.
+
+### API key setup
+
+```bash
+cp .env.example .env
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Put the generated value in `APEX_API_KEY`. For a local protected API, set the same key in the shell before starting Uvicorn. Send it as the `X-API-Key` header. For production set `APEX_ENV=production`; the service will refuse to start without a strong key.
